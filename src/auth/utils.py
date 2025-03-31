@@ -9,7 +9,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-ACCESS_TOKEN_EXPIRE = 43200
+ACCESS_TOKEN_EXPIRE = 3600
 
 # ===============================================================================
 
@@ -29,7 +29,6 @@ def verify_password_hash(password: str, hashed_password: str) -> bool:
 
 def create_access_token(user_data: dict, expiry: timedelta = None, refresh: bool = False):
     payload = {}
-
     payload['user'] = user_data
     payload['exp'] = datetime.now() + (expiry if expiry is not None else timedelta(seconds=ACCESS_TOKEN_EXPIRE))
     payload['jti'] = str(uuid.uuid4())
@@ -40,7 +39,7 @@ def create_access_token(user_data: dict, expiry: timedelta = None, refresh: bool
         key=Config.JWT_SECRET,
         algorithm=Config.JWT_ALGORITHM,
     )
-
+    
     return token
 
 
@@ -51,9 +50,8 @@ def decode_token(token: str) -> dict:
             key=Config.JWT_SECRET,
             algorithms=[Config.JWT_ALGORITHM]
         )
-
         return token_data
-
+    
     except jwt.PyJWTError as e:
         logging.exception(e)
         return None
