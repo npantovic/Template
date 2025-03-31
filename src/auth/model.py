@@ -22,7 +22,7 @@ class User(SQLModel, table=True):
     email: str
     first_name: str
     last_name: str
-    UCIN: int
+    UCIN: str
     date_of_birth: str
     gender: str
     is_verified: bool = False
