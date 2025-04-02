@@ -4,11 +4,13 @@ from sqlmodel import select
 from .serializers import UserCreateSerializer
 from .utils import generate_password_hash
 from sqlalchemy import or_
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
+import re
 
 
 
 class UserService:
+
     async def get_all_users(self, session: AsyncSession):
         statement = select(User).order_by(User.uid)
 
@@ -16,7 +18,9 @@ class UserService:
 
         return result.all()
 
+
     # ==================================================================================================
+
 
     async def get_user_by_email(self, email: str, session: AsyncSession):
         statement = select(User).where(User.email == email)
@@ -27,6 +31,7 @@ class UserService:
 
         return user
 
+
     async def get_user_by_first_name(self, first_name: str, session: AsyncSession):
         statement = select(User).where(User.first_name == first_name)
 
@@ -35,7 +40,8 @@ class UserService:
         user = result.all()
 
         return user
-    
+
+
     async def get_user_by_username(self, username: str, session: AsyncSession):
         statement = select(User).where(User.username == username)
 
@@ -44,6 +50,7 @@ class UserService:
         user = result.first()
 
         return user
+
 
     async def get_user_by_last_name(self, last_name: str, session: AsyncSession):
         statement = select(User).where(User.last_name == last_name)
@@ -54,6 +61,7 @@ class UserService:
 
         return user
 
+
     async def get_user_by_date_of_birth(self, date_of_birth: str, session: AsyncSession):
         statement = select(User).where(User.date_of_birth == date_of_birth)
 
@@ -62,6 +70,7 @@ class UserService:
         user = result.all()
 
         return user
+
 
     async def get_user_by_UCIN(self, UCIN: str, session: AsyncSession):
         statement = select(User).where(User.UCIN == UCIN)
@@ -72,6 +81,7 @@ class UserService:
 
         return user
 
+
     async def get_user_by_gender(self, gender: str, session: AsyncSession):
         statement = select(User).where(User.gender == gender)
 
@@ -80,6 +90,7 @@ class UserService:
         user = result.all()
 
         return user
+
 
     async def get_user_by_uid(self, uid: str, session: AsyncSession):
         statement = select(User).where(User.uid == uid)
@@ -90,7 +101,9 @@ class UserService:
 
         return user
 
+
     # ==================================================================================================
+
 
     async def user_exists(self, email: str, username: str, ucin: str, session: AsyncSession):
         result = await session.exec(
@@ -187,3 +200,74 @@ class UserService:
         await session.commit()
 
         return user
+
+
+    # ==================================================================================================
+
+    async def update_username(self, user_uid: str, new_username: str, session: AsyncSession):
+        # Proveri da li username već postoji
+        existing_user = await self.get_user_by_username(new_username, session)
+        if existing_user:
+            raise ValueError("Username is already taken")
+
+        # Pronađi korisnika po UID-u
+        user = await self.get_user_by_uid(user_uid, session)
+        if not user:
+            raise ValueError("User not found")
+
+        # Ažuriraj username
+        user.username = new_username
+        await session.commit()
+        await session.refresh(user)
+
+        return user
+    
+
+    async def update_email(self, user_uid: str, new_email: str, session: AsyncSession):
+        # Proveri da li email već postoji
+        existing_user = await self.get_user_by_email(new_email, session)
+        if existing_user:
+            raise ValueError("Email is already taken")
+
+        # Pronađi korisnika po UID-u
+        user = await self.get_user_by_uid(user_uid, session)
+        if not user:
+            raise ValueError("User not found")
+
+        # Ažuriraj email
+        user.email = new_email
+        await session.commit()
+        await session.refresh(user)
+
+        return user
+
+
+    async def validate_password_complexity(self, password: str):
+        """
+        Validates the complexity of a password.
+        """
+        if len(password) < 8:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must be at least 8 characters long"
+            )
+        if not re.search(r"[A-Z]", password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must contain at least one uppercase letter"
+            )
+        if not re.search(r"[a-z]", password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must contain at least one lowercase letter"
+            )
+        if not re.search(r"\d", password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must contain at least one number"
+            )
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must contain at least one special character"
+            )

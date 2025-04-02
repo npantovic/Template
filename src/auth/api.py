@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status, Depends, Request, BackgroundTasks
+from fastapi import APIRouter, status, Depends, Request, BackgroundTasks, Response, Form
 from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 from typing import List
@@ -10,11 +10,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from ..db.main import get_session
 from ..db.redis import add_jti_to_blocklist
 from .dependencies import AccessTokenBearer
-from .utils import decode_token, create_access_token, verify_password_hash, decode_url_safe_token, create_url_safe_token
+from .utils import generate_password_hash, create_access_token, verify_password_hash, decode_url_safe_token, create_url_safe_token
 from datetime import timedelta
 from starlette.templating import Jinja2Templates
 from src.config import Config
 from ..mail import create_message, mail
+from .dependencies import get_current_user
 
 REFRESH_TOKEN_EXPIRY = 2
 
@@ -25,7 +26,7 @@ templates = Jinja2Templates(directory="src/templates")
 
 
 @auth_router.post("/all_users", response_model=List[User])
-async def get_all_users(session: AsyncSession = Depends(get_session),): # user_details = Depends(access_token_bearer)
+async def get_all_users(session: AsyncSession = Depends(get_session), user_details = Depends(access_token_bearer)):
     # role = user_details.get('user', {}).get("role")
     role = "admin"
     if role == "admin":
@@ -33,6 +34,14 @@ async def get_all_users(session: AsyncSession = Depends(get_session),): # user_d
         return users
     else:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not allowed")
+
+
+@auth_router.get('/me')
+async def get_curr_user(current_user = Depends(get_current_user)):
+    return current_user
+
+
+# =========================================================CREATE_USER====================================================================
 
 
 @auth_router.post("/singup", status_code=status.HTTP_201_CREATED)
@@ -70,19 +79,20 @@ async def create_user(user_data: UserCreateSerializer, bg_tasks: BackgroundTasks
         "user": new_user
     }
 
-    # return new_user
+
+# =========================================================LOGIN_LOGOUT====================================================================
 
 
 @auth_router.post('/login')
-async def login_users(login_data: UserLoginSerializer, session: AsyncSession = Depends(get_session)):
+async def login_users(login_data: UserLoginSerializer, response: Response, session: AsyncSession = Depends(get_session)):
     email = login_data.email
-    password_hash = login_data.password_hash
+    password = login_data.password_hash
 
     user = await user_service.get_user_by_email(email, session)
 
     if user is not None:
         if user.is_verified:
-            password_valid = verify_password_hash(password_hash, user.password_hash)
+            password_valid = verify_password_hash(password, user.password_hash)
             if password_valid:
                 access_token = create_access_token(
                     user_data={
@@ -102,14 +112,29 @@ async def login_users(login_data: UserLoginSerializer, session: AsyncSession = D
                     expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
                 )
 
+                response.set_cookie(
+                    key="access_token",
+                    value=access_token,
+                    httponly=True,
+                    secure=True,
+                    samesite="Strict"
+                )
+
+                response.set_cookie(
+                    key="refresh_token",
+                    value=refresh_token,
+                    httponly=True,
+                    secure=True,
+                    samesite="Strict"
+                )
+
                 return JSONResponse(
                     content={
                         "message": "Successfully logged in",
                         "access_token": access_token,
-                        "refresh_token": refresh_token,
-                        "user" : {
+                        "user": {
                             "email": user.email,
-                            "uid": str(user.uid),
+                            "user_uid": str(user.uid),
                             "role": user.role,
                         }
                     }
@@ -119,6 +144,7 @@ async def login_users(login_data: UserLoginSerializer, session: AsyncSession = D
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is not verified, check your email",
             )
+
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Invalid email or password",
@@ -166,3 +192,130 @@ async def logout(token_details: dict = Depends(AccessTokenBearer())):
         },
         status_code=status.HTTP_200_OK
     )
+
+
+# =========================================================UPDATE_DELETE_USER====================================================================
+
+
+@auth_router.patch("/update-username")
+async def update_username(user_uid: str, new_username: str, session: AsyncSession = Depends(get_session)):
+    updated_user = await user_service.update_username(user_uid, new_username, session)
+    return {"message": "Username updated successfully", "user": updated_user}
+
+
+@auth_router.patch("/update-email")
+async def update_email(user_uid: str, new_email: str, session: AsyncSession = Depends(get_session)):
+    updated_user = await user_service.update_email(user_uid, new_email, session)
+    return {"message": "Email updated successfully", "user": updated_user}
+
+
+@auth_router.delete('/delete/{user_uid}')
+async def delete_user(user_uid: str, session: AsyncSession = Depends(get_session), user_details = Depends(access_token_bearer)):
+    role = user_details.get('user', {}).get("role")
+    uid = user_details.get('user', {}).get('user_uid')
+    if role == "admin" or user_uid == uid:
+        user_to_delete = await user_service.delete_user(user_uid, session)
+        if user_to_delete is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        else:
+            return {}
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not allowed")
+
+
+# =========================================================PASSWOR_RESTART====================================================================
+
+
+@auth_router.post('/password_reset_request')
+async def password_reset_request(user_details=Depends(access_token_bearer)):
+    email = user_details.get('user', {}).get("email")
+
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email not found")
+
+
+    token = create_url_safe_token({"email": email})
+
+    link = f"http://{Config.DOMAIN}/api/v1/auth/password_reset_confirm/{token}"
+
+    html_message = f"""
+                    <h1>Reset your password</h1>
+                    <p>Please reset your password. <a href="{link}">Reset here</a> </p>
+                    """
+
+    message = create_message(
+                recipients=[email],
+                subject="Reset your password",
+                body=html_message,
+            )
+    await mail.send_message(message)
+
+    return JSONResponse(
+        content={
+            "message": "Please check your email to reset your password"
+        },
+        status_code=status.HTTP_200_OK
+    )
+
+@auth_router.get('/password_reset_confirm/{token}', response_class=HTMLResponse, include_in_schema=False)
+async def reset_password_page(token: str, request: Request):
+    return templates.TemplateResponse("password_reset_form.html", {
+        "request": request,
+        "token": token,
+        "title": "Reset Your Password",
+        "details": "Please enter your new password and confirm it."
+    })
+
+
+@auth_router.post('/password_reset_confirm/{token}', include_in_schema=False)
+async def reset_user_password(
+    request: Request,
+    token: str,
+    new_password: str = Form(...),
+    confirm_new_password: str = Form(...),
+    session: AsyncSession = Depends(get_session)
+):
+    # errors = [] odraditi da se errori prikazuju na html strani
+
+    if new_password != confirm_new_password:
+        raise HTTPException(
+            detail="Passwords don't match",
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+    
+    await user_service.validate_password_complexity(new_password)
+
+    token_data = decode_url_safe_token(token)
+    user_email = token_data.get('email')
+
+    if user_email:
+        user = await user_service.get_user_by_email(user_email, session)
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        passwd_hash = generate_password_hash(new_password)
+
+        await user_service.update_user_email_verify(user, {"password_hash": passwd_hash}, session)
+
+        # await add_jti_to_blocklist(token_data['jti']) ZA REDIS
+
+        return templates.TemplateResponse("password_reset.html", {
+            "request": request,
+            "title": "Password Reset",
+            "message": "Password Reset Successfully",
+            "details": "Your password has been reset.",
+        })
+
+    return templates.TemplateResponse("password_reset.html", {
+        "request": request,
+        "title": "Password Reset Failed",
+        "message": "Password Reset Failed",
+        "details": "Sorry, there was an issue resetting your password."
+    })
+
+
+# =============================================================================================================================

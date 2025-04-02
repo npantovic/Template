@@ -2,13 +2,13 @@ from fastapi.exceptions import HTTPException
 from fastapi import Request, status, Depends
 from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
-from .utils import *
-from src.db.redis import *
-from src.db.main import *
+from .utils import decode_token
+from src.db.redis import token_in_blocklist
+from src.db.main import get_session
 from sqlmodel.ext.asyncio.session import AsyncSession
-from .service import *
+from .service import UserService
 from typing import List, Any
-from .model import *
+from .model import User
 
 
 user_service = UserService()
@@ -30,11 +30,12 @@ class TokenBearer(HTTPBearer):
                 "resolution": "Please get new token"
             })
 
-        if await token_in_blocklist(token_data['jti']):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
-                "error": "This token is invalid or has been revoked",
-                "resolution": "Please get new token"
-            })
+        # POTREBAN REDIS DA BI SE OVO KORISTILO, PROVERAVA BLOKIRANE TOKENE KOJI SE CUVAJU U REDISU
+        # if await token_in_blocklist(token_data['jti']):
+        #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
+        #         "error": "This token is invalid or has been revoked",
+        #         "resolution": "Please get new token"
+        #     })
 
         self.verify_token_data(token_data)
 
