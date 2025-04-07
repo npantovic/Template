@@ -2,6 +2,8 @@ from fastapi import FastAPI
 
 from contextlib import asynccontextmanager
 from src.db.main import init_db
+from fastapi.middleware.cors import CORSMiddleware
+
 
 # ================================routes imports===============================
 
@@ -26,6 +28,14 @@ app = FastAPI(
     description="Template FastAPI project",
     version=version,
     lifespan=life_span,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Dozvoli frontend domen
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

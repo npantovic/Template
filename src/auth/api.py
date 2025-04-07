@@ -3,14 +3,20 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 from typing import List
 from fastapi.exceptions import HTTPException
-from .serializers import UserCreateSerializer, UserSerializer, UserLoginSerializer
+from .serializers import UserCreateSerializer, UserLoginSerializer
 from .model import User
 from .service import UserService
 from sqlmodel.ext.asyncio.session import AsyncSession
 from ..db.main import get_session
 from ..db.redis import add_jti_to_blocklist
 from .dependencies import AccessTokenBearer
-from .utils import generate_password_hash, create_access_token, verify_password_hash, decode_url_safe_token, create_url_safe_token
+from .utils import (
+    generate_password_hash,
+    create_access_token,
+    verify_password_hash,
+    decode_url_safe_token,
+    create_url_safe_token
+)
 from datetime import timedelta
 from starlette.templating import Jinja2Templates
 from src.config import Config
@@ -26,7 +32,7 @@ templates = Jinja2Templates(directory="src/templates")
 
 
 @auth_router.post("/all_users", response_model=List[User])
-async def get_all_users(session: AsyncSession = Depends(get_session), user_details = Depends(access_token_bearer)):
+async def get_all_users(session: AsyncSession = Depends(get_session)):
     # role = user_details.get('user', {}).get("role")
     role = "admin"
     if role == "admin":
@@ -84,15 +90,15 @@ async def create_user(user_data: UserCreateSerializer, bg_tasks: BackgroundTasks
 
 
 @auth_router.post('/login')
-async def login_users(login_data: UserLoginSerializer, response: Response, session: AsyncSession = Depends(get_session)):
+async def login_users(login_data: UserLoginSerializer, session: AsyncSession = Depends(get_session)):
     email = login_data.email
-    password = login_data.password_hash
+    password_hash = login_data.password_hash
 
     user = await user_service.get_user_by_email(email, session)
 
     if user is not None:
         if user.is_verified:
-            password_valid = verify_password_hash(password, user.password_hash)
+            password_valid = verify_password_hash(password_hash, user.password_hash)
             if password_valid:
                 access_token = create_access_token(
                     user_data={
@@ -112,29 +118,14 @@ async def login_users(login_data: UserLoginSerializer, response: Response, sessi
                     expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
                 )
 
-                response.set_cookie(
-                    key="access_token",
-                    value=access_token,
-                    httponly=True,
-                    secure=True,
-                    samesite="Strict"
-                )
-
-                response.set_cookie(
-                    key="refresh_token",
-                    value=refresh_token,
-                    httponly=True,
-                    secure=True,
-                    samesite="Strict"
-                )
-
                 return JSONResponse(
                     content={
                         "message": "Successfully logged in",
                         "access_token": access_token,
-                        "user": {
+                        "refresh_token": refresh_token,
+                        "user" : {
                             "email": user.email,
-                            "user_uid": str(user.uid),
+                            "uid": str(user.uid),
                             "role": user.role,
                         }
                     }
@@ -144,7 +135,6 @@ async def login_users(login_data: UserLoginSerializer, response: Response, sessi
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is not verified, check your email",
             )
-
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Invalid email or password",

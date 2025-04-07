@@ -1,4 +1,5 @@
-import redis.asyncio as redis
+# import aioredis
+import redis.asyncio as redis # koristi se redis ili aioredis ako ga nismo napravili
 from src.config import Config
 
 JTI_EXPIRY = 3600

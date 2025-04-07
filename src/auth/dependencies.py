@@ -85,3 +85,6 @@ class RoleChecker:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not allowed to perform this action"
         )
+
+
+# ==================================================================================================================
