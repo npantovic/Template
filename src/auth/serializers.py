@@ -90,3 +90,13 @@ class PasswordResetSerializer(BaseModel):
 class PasswordChangeSerializer(BaseModel):
     new_password: str
     confirm_new_password: str
+
+
+class UsernameChangeSerializer(BaseModel):
+    user_uid: str
+    new_username: str
+
+
+class EmailChangeSerializer(BaseModel):
+    user_uid: str
+    new_email: str

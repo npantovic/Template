@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 from typing import List
 from fastapi.exceptions import HTTPException
-from .serializers import UserCreateSerializer, UserLoginSerializer
+from .serializers import UserCreateSerializer, UserLoginSerializer, UsernameChangeSerializer, EmailChangeSerializer
 from .model import User
 from .service import UserService
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -188,14 +188,14 @@ async def logout(token_details: dict = Depends(AccessTokenBearer())):
 
 
 @auth_router.patch("/update-username")
-async def update_username(user_uid: str, new_username: str, session: AsyncSession = Depends(get_session)):
-    updated_user = await user_service.update_username(user_uid, new_username, session)
+async def update_username(data: UsernameChangeSerializer, session: AsyncSession = Depends(get_session)):
+    updated_user = await user_service.update_username(data.user_uid, data.new_username, session)
     return {"message": "Username updated successfully", "user": updated_user}
 
 
 @auth_router.patch("/update-email")
-async def update_email(user_uid: str, new_email: str, session: AsyncSession = Depends(get_session)):
-    updated_user = await user_service.update_email(user_uid, new_email, session)
+async def update_email(data: EmailChangeSerializer, session: AsyncSession = Depends(get_session)):
+    updated_user = await user_service.update_email(data.user_uid, data.new_email, session)
     return {"message": "Email updated successfully", "user": updated_user}
 
 
