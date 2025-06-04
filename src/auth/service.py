@@ -205,17 +205,14 @@ class UserService:
     # ==================================================================================================
 
     async def update_username(self, user_uid: str, new_username: str, session: AsyncSession):
-        # Proveri da li username već postoji
         existing_user = await self.get_user_by_username(new_username, session)
         if existing_user:
             raise ValueError("Username is already taken")
 
-        # Pronađi korisnika po UID-u
         user = await self.get_user_by_uid(user_uid, session)
         if not user:
             raise ValueError("User not found")
 
-        # Ažuriraj username
         user.username = new_username
         await session.commit()
         await session.refresh(user)
@@ -224,17 +221,14 @@ class UserService:
     
 
     async def update_email(self, user_uid: str, new_email: str, session: AsyncSession):
-        # Proveri da li email već postoji
         existing_user = await self.get_user_by_email(new_email, session)
         if existing_user:
             raise ValueError("Email is already taken")
 
-        # Pronađi korisnika po UID-u
         user = await self.get_user_by_uid(user_uid, session)
         if not user:
             raise ValueError("User not found")
 
-        # Ažuriraj email
         user.email = new_email
         await session.commit()
         await session.refresh(user)

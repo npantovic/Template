@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List
 from datetime import datetime
-
+from email_validator import validate_email as email_check, EmailNotValidError
 from pydantic import BaseModel, field_validator, Field
 import uuid
 import re
@@ -22,19 +22,37 @@ class UserSerializer(BaseModel):
     created_at: datetime
     update_at: datetime
 
+
 class GenderEnumSerializer(str, Enum):
     male = "Male"
     female = "Female"
 
+
 class UserCreateSerializer(BaseModel):
-    username: str = Field(min_length=3, max_length=15)
+    username: str
     email: str = Field(max_length=50)
-    password_hash: str = Field(min_length=8)
+    password_hash: str
     first_name: str
     last_name: str
     UCIN: str
     date_of_birth: str
     gender: GenderEnumSerializer
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str) -> str:
+        if len(value) > 15 or len(value) < 3:
+            raise ValueError("Username must be between 3 and 15 characters long")
+        return value
+    
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        try:
+            valid = email_check(value)
+            return valid.email
+        except EmailNotValidError as e:
+            raise ValueError(f"Invalid email address: {str(e)}")
 
     @field_validator("UCIN")
     @classmethod
@@ -58,6 +76,7 @@ class UserCreateSerializer(BaseModel):
             raise ValueError("Password must contain at least one special character (!@#$%^&*(),.?\":{}|<>)")
         return value
 
+
 class UserCreateAdminModel(BaseModel):
     username: str
     email: str
@@ -77,7 +96,6 @@ class UserLoginSerializer(BaseModel):
 class UserChangePasswordSerializer(BaseModel):
     email: str
     password_hash: str
-
 
 
 class EmailSerializer(BaseModel):
@@ -100,3 +118,12 @@ class UsernameChangeSerializer(BaseModel):
 class EmailChangeSerializer(BaseModel):
     user_uid: str
     new_email: str
+
+    @field_validator("new_email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        try:
+            valid = email_check(value)
+            return valid.email
+        except EmailNotValidError as e:
+            raise ValueError(f"Invalid new_email address: {str(e)}")
