@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Column
 import sqlalchemy.dialects.postgresql as pg
-from sqlalchemy import Integer
+from sqlalchemy import Integer, String
 from datetime import datetime
 import uuid
 from typing import Optional
@@ -27,6 +27,10 @@ class User(SQLModel, table=True):
     gender: str
     is_verified: bool = False
     role: str = Field(default="clan")
+
+    totp_secret: str 
+    enabled_2fa: bool = False
+    
     created_at: datetime = Field(sa_column=Column(pg.TIMESTAMP, default=datetime.now()))
     update_at: datetime = Field(sa_column=Column(pg.TIMESTAMP, default=datetime.now()))
 

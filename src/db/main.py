@@ -5,6 +5,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 # ======================MODEL TO CREATE IN DB========================
+from src.auth.model import User
 from src.books.model import Book
 # ===================================================================
 

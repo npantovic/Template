@@ -7,7 +7,9 @@ from sqlalchemy import or_
 from fastapi import Depends, HTTPException, status
 import re
 
-
+import pyotp
+import qrcode
+from io import BytesIO
 
 class UserService:
 
@@ -234,6 +236,26 @@ class UserService:
         await session.refresh(user)
 
         return user
+    
+
+    async def update_totp(self, user_uid: str, new_totp: str, session: AsyncSession):
+        user = await self.get_user_by_uid(user_uid, session)
+        if not user:
+            raise ValueError("User not found")
+
+        user.totp_secret = new_totp
+        await session.commit()
+        await session.refresh(user)
+
+
+    async def update_enabled_2fa(self, user_uid: str, session: AsyncSession):
+        user = await self.get_user_by_uid(user_uid, session)
+        if not user:
+            raise ValueError("User not found")
+
+        user.enabled_2fa = True
+        await session.commit()
+        await session.refresh(user)
 
 
     async def validate_password_complexity(self, password: str):
@@ -265,3 +287,19 @@ class UserService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Password must contain at least one special character"
             )
+        
+
+    # ==================================================================================================
+
+
+    def generate_secret(self):
+        return pyotp.random_base32()
+
+
+    def get_qr_code(self, username: str, secret: str):
+        otp_uri = pyotp.totp.TOTP(secret).provisioning_uri(name=username, issuer_name="MyApp")
+        img = qrcode.make(otp_uri)
+        buf = BytesIO()
+        img.save(buf)
+        buf.seek(0)
+        return buf

@@ -26,9 +26,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
-Config = Settings()
-
 load_dotenv()
+
+Config = Settings()
 
 api_url = os.getenv("API_URL")
 api_key = os.getenv("API_KEY")

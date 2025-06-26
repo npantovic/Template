@@ -23,6 +23,9 @@ from src.config import Config
 from ..mail import create_message, mail
 from .dependencies import get_current_user
 
+from fastapi.responses import StreamingResponse
+import pyotp
+
 REFRESH_TOKEN_EXPIRY = 2
 
 auth_router = APIRouter()
@@ -89,10 +92,11 @@ async def create_user(user_data: UserCreateSerializer, bg_tasks: BackgroundTasks
 # =========================================================LOGIN_LOGOUT====================================================================
 
 
-@auth_router.post('/login')
-async def login_users(login_data: UserLoginSerializer, session: AsyncSession = Depends(get_session)):
+@auth_router.post('/prelogin')
+async def prelogin_users(login_data: UserLoginSerializer, session: AsyncSession = Depends(get_session)):
     email = login_data.email
     password_hash = login_data.password_hash
+    otp_code = login_data.otp_code
 
     user = await user_service.get_user_by_email(email, session)
 
@@ -100,36 +104,97 @@ async def login_users(login_data: UserLoginSerializer, session: AsyncSession = D
         if user.is_verified:
             password_valid = verify_password_hash(password_hash, user.password_hash)
             if password_valid:
-                access_token = create_access_token(
-                    user_data={
-                        'email': user.email,
-                        "user_uid": str(user.uid),
-                        "role": user.role,
-                    }
-                )
+                if not user.enabled_2fa:
+                    pass
 
-                refresh_token = create_access_token(
-                    user_data={
-                        'email': user.email,
-                        "user_uid": str(user.uid),
-                        "role": user.role,
-                    },
-                    refresh=True,
-                    expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
-                )
 
-                return JSONResponse(
-                    content={
-                        "message": "Successfully logged in",
-                        "access_token": access_token,
-                        "refresh_token": refresh_token,
-                        "user" : {
-                            "email": user.email,
-                            "uid": str(user.uid),
+@auth_router.post('/login')
+async def login_users(login_data: UserLoginSerializer, session: AsyncSession = Depends(get_session)):
+    email = login_data.email
+    password_hash = login_data.password_hash
+    otp_code = login_data.otp_code
+
+    login_data.email = "nikolapantovic6@gmail.com"
+
+    user = await user_service.get_user_by_email(email, session)
+
+    if user is not None:
+        if user.is_verified:
+            password_valid = verify_password_hash(password_hash, user.password_hash)
+            if password_valid:
+                if not user.enabled_2fa:
+                    access_token = create_access_token(
+                        user_data={
+                            'email': user.email,
+                            "user_uid": str(user.uid),
                             "role": user.role,
                         }
-                    }
-                )
+                    )
+
+                    refresh_token = create_access_token(
+                        user_data={
+                            'email': user.email,
+                            "user_uid": str(user.uid),
+                            "role": user.role,
+                        },
+                        refresh=True,
+                        expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
+                    )
+
+                    return JSONResponse(
+                        content={
+                            "message": "Successfully logged in",
+                            "access_token": access_token,
+                            "refresh_token": refresh_token,
+                            "user" : {
+                                "email": user.email,
+                                "uid": str(user.uid),
+                                "role": user.role,
+                            }
+                        }
+                    )
+                else:
+                    if user.enabled_2fa:
+                        if not login_data.otp_code:
+                            raise HTTPException(status_code=400, detail="2FA kod je obavezan")
+
+                        totp = pyotp.TOTP(user.totp_secret)
+                        if not totp.verify(login_data.otp_code, valid_window=1):  # valid_window dozvoljava malo kašnjenje
+                            print("===============================")
+                            print("Kod koji treba da dobijaš u aplikaciji:", pyotp.TOTP("N4ZX3HPFJP3EXG434VYBPE6BGWEM7MRC").now())
+                            print("===============================")
+                            raise HTTPException(status_code=401, detail="Neispravan 2FA kod")
+                        
+                        access_token = create_access_token(
+                        user_data={
+                            'email': user.email,
+                            "user_uid": str(user.uid),
+                            "role": user.role,
+                        }
+                    )
+
+                    refresh_token = create_access_token(
+                        user_data={
+                            'email': user.email,
+                            "user_uid": str(user.uid),
+                            "role": user.role,
+                        },
+                        refresh=True,
+                        expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
+                    )
+
+                    return JSONResponse(
+                        content={
+                            "message": "Successfully logged in",
+                            "access_token": access_token,
+                            "refresh_token": refresh_token,
+                            "user" : {
+                                "email": user.email,
+                                "uid": str(user.uid),
+                                "role": user.role,
+                            }
+                        }
+                    )
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -308,4 +373,19 @@ async def reset_user_password(
     })
 
 
-# =============================================================================================================================
+# =======================================================2FA=====================================================================
+
+
+@auth_router.get("/2fa/qr-code/{username}")
+async def get_2fa_qr_code(username: str, session: AsyncSession = Depends(get_session)):
+    user = await user_service.get_user_by_username(username, session)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    secret = user_service.generate_secret()
+
+    await user_service.update_totp(user.uid, secret, session)
+    await user_service.update_enabled_2fa(user.uid, session)
+
+    img_buf = user_service.get_qr_code(username, secret)
+    return StreamingResponse(img_buf, media_type="image/png")

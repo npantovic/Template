@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from email_validator import validate_email as email_check, EmailNotValidError
 from pydantic import BaseModel, field_validator, Field
@@ -19,6 +19,8 @@ class UserSerializer(BaseModel):
     gender: str
     is_verified: bool = False
     role: str
+    totp_secret: str 
+    enabled_2fa: bool = False
     created_at: datetime
     update_at: datetime
 
@@ -37,6 +39,9 @@ class UserCreateSerializer(BaseModel):
     UCIN: str
     date_of_birth: str
     gender: GenderEnumSerializer
+
+    totp_secret: str = ""
+    enabled_2fa: bool = False
 
     @field_validator("username")
     @classmethod
@@ -91,7 +96,7 @@ class UserCreateAdminModel(BaseModel):
 class UserLoginSerializer(BaseModel):
     email: str
     password_hash: str
-
+    otp_code: str = "532812"
 
 class UserChangePasswordSerializer(BaseModel):
     email: str
