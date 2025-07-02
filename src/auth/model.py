@@ -28,7 +28,7 @@ class User(SQLModel, table=True):
     is_verified: bool = False
     role: str = Field(default="clan")
 
-    totp_secret: str 
+    totp_secret: str = None
     enabled_2fa: bool = False
     
     created_at: datetime = Field(sa_column=Column(pg.TIMESTAMP, default=datetime.now()))

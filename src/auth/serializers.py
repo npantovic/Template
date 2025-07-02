@@ -96,7 +96,12 @@ class UserCreateAdminModel(BaseModel):
 class UserLoginSerializer(BaseModel):
     email: str
     password_hash: str
-    otp_code: str = "532812"
+
+
+class UserLoginSerializerOpt(BaseModel):
+    otp_code: str
+    email: str
+
 
 class UserChangePasswordSerializer(BaseModel):
     email: str

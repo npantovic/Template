@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 from typing import List
 from fastapi.exceptions import HTTPException
-from .serializers import UserCreateSerializer, UserLoginSerializer, UsernameChangeSerializer, EmailChangeSerializer
+from .serializers import UserCreateSerializer, UserLoginSerializer, UsernameChangeSerializer, EmailChangeSerializer, UserLoginSerializerOpt
 from .model import User
 from .service import UserService
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -93,28 +93,55 @@ async def create_user(user_data: UserCreateSerializer, bg_tasks: BackgroundTasks
 
 
 @auth_router.post('/prelogin')
-async def prelogin_users(login_data: UserLoginSerializer, session: AsyncSession = Depends(get_session)):
-    email = login_data.email
-    password_hash = login_data.password_hash
-    otp_code = login_data.otp_code
+async def prelogin_users(login_data: UserLoginSerializerOpt, session: AsyncSession = Depends(get_session)):
+    if not login_data.otp_code:
+        raise HTTPException(status_code=400, detail="2FA kod je obavezan")
 
-    user = await user_service.get_user_by_email(email, session)
+    user = await user_service.get_user_by_email(login_data.email, session)
 
-    if user is not None:
-        if user.is_verified:
-            password_valid = verify_password_hash(password_hash, user.password_hash)
-            if password_valid:
-                if not user.enabled_2fa:
-                    pass
+    totp = pyotp.TOTP(user.totp_secret)
+    if not totp.verify(login_data.otp_code, valid_window=1):  # valid_window dozvoljava malo kašnjenje
+        # print("===============================")
+        # print("Kod koji treba da dobijaš u aplikaciji:", pyotp.TOTP("ECSWTHXWRM3JQILP243FKFQOPZXTVEQO").now())
+        # print("===============================")
+        raise HTTPException(status_code=401, detail="Neispravan 2FA kod")
+    
+    access_token = create_access_token(
+    user_data={
+        'email': user.email,
+        "user_uid": str(user.uid),
+        "role": user.role,
+        }
+    )
+
+    refresh_token = create_access_token(
+        user_data={
+            'email': user.email,
+            "user_uid": str(user.uid),
+            "role": user.role,
+        },
+        refresh=True,
+        expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
+    )
+
+    return JSONResponse(
+        content={
+            "message": "Successfully logged in",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user" : {
+                "email": user.email,
+                "uid": str(user.uid),
+                "role": user.role,
+            }
+        }
+    )
 
 
 @auth_router.post('/login')
 async def login_users(login_data: UserLoginSerializer, session: AsyncSession = Depends(get_session)):
     email = login_data.email
     password_hash = login_data.password_hash
-    otp_code = login_data.otp_code
-
-    login_data.email = "nikolapantovic6@gmail.com"
 
     user = await user_service.get_user_by_email(email, session)
 
@@ -154,47 +181,55 @@ async def login_users(login_data: UserLoginSerializer, session: AsyncSession = D
                         }
                     )
                 else:
-                    if user.enabled_2fa:
-                        if not login_data.otp_code:
-                            raise HTTPException(status_code=400, detail="2FA kod je obavezan")
-
-                        totp = pyotp.TOTP(user.totp_secret)
-                        if not totp.verify(login_data.otp_code, valid_window=1):  # valid_window dozvoljava malo kašnjenje
-                            print("===============================")
-                            print("Kod koji treba da dobijaš u aplikaciji:", pyotp.TOTP("N4ZX3HPFJP3EXG434VYBPE6BGWEM7MRC").now())
-                            print("===============================")
-                            raise HTTPException(status_code=401, detail="Neispravan 2FA kod")
-                        
-                        access_token = create_access_token(
-                        user_data={
-                            'email': user.email,
-                            "user_uid": str(user.uid),
-                            "role": user.role,
-                        }
-                    )
-
-                    refresh_token = create_access_token(
-                        user_data={
-                            'email': user.email,
-                            "user_uid": str(user.uid),
-                            "role": user.role,
-                        },
-                        refresh=True,
-                        expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
-                    )
-
                     return JSONResponse(
                         content={
-                            "message": "Successfully logged in",
-                            "access_token": access_token,
-                            "refresh_token": refresh_token,
-                            "user" : {
-                                "email": user.email,
-                                "uid": str(user.uid),
-                                "role": user.role,
-                            }
-                        }
+                            "message": "2FA required",
+                            "requires_2fa": True,
+                            "email": user.email
+                        },
+                        status_code=status.HTTP_200_OK
                     )
+                    # if user.enabled_2fa:
+                    #     if not login_data.otp_code:
+                    #         raise HTTPException(status_code=400, detail="2FA kod je obavezan")
+
+                    #     totp = pyotp.TOTP(user.totp_secret)
+                    #     if not totp.verify(login_data.otp_code, valid_window=1):  # valid_window dozvoljava malo kašnjenje
+                    #         # print("===============================")
+                    #         # print("Kod koji treba da dobijaš u aplikaciji:", pyotp.TOTP("ECSWTHXWRM3JQILP243FKFQOPZXTVEQO").now())
+                    #         # print("===============================")
+                    #         raise HTTPException(status_code=401, detail="Neispravan 2FA kod")
+                        
+                    #     access_token = create_access_token(
+                    #     user_data={
+                    #         'email': user.email,
+                    #         "user_uid": str(user.uid),
+                    #         "role": user.role,
+                    #     }
+                    # )
+
+                    # refresh_token = create_access_token(
+                    #     user_data={
+                    #         'email': user.email,
+                    #         "user_uid": str(user.uid),
+                    #         "role": user.role,
+                    #     },
+                    #     refresh=True,
+                    #     expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
+                    # )
+
+                    # return JSONResponse(
+                    #     content={
+                    #         "message": "Successfully logged in",
+                    #         "access_token": access_token,
+                    #         "refresh_token": refresh_token,
+                    #         "user" : {
+                    #             "email": user.email,
+                    #             "uid": str(user.uid),
+                    #             "role": user.role,
+                    #         }
+                    #     }
+                    # )
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
