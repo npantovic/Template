@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 from typing import List
 from fastapi.exceptions import HTTPException
-from .serializers import UserCreateSerializer, UserLoginSerializer, UsernameChangeSerializer, EmailChangeSerializer, UserLoginSerializerOpt
+from .serializers import UserCreateSerializer, UserLoginSerializer, UsernameChangeSerializer, EmailChangeSerializer, UserLoginSerializerOpt, PasswordResetSerializerNoLogin
 from .model import User
 from .service import UserService
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -314,6 +314,40 @@ async def password_reset_request(bg_tasks: BackgroundTasks, user_details=Depends
         },
         status_code=status.HTTP_200_OK
     )
+
+
+@auth_router.post('/password_reset_request_no_login')
+async def password_reset_request_no_login(user_data: PasswordResetSerializerNoLogin, bg_tasks: BackgroundTasks):
+    email = user_data.email
+
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email not found")
+
+
+    token = create_url_safe_token({"email": email})
+
+    link = f"http://{Config.DOMAIN}/api/v1/auth/password_reset_confirm/{token}"
+
+    html_message = f"""
+                    <h1>Reset your password</h1>
+                    <p>Please reset your password. <a href="{link}">Reset here</a> </p>
+                    """
+
+    message = create_message(
+                recipients=[email],
+                subject="Reset your password",
+                body=html_message,
+            )
+    
+    bg_tasks.add_task(mail.send_message, message)
+
+    return JSONResponse(
+        content={
+            "message": "Please check your email to reset your password"
+        },
+        status_code=status.HTTP_200_OK
+    )
+
 
 @auth_router.get('/password_reset_confirm/{token}', response_class=HTMLResponse, include_in_schema=False)
 async def reset_password_page(token: str, request: Request):

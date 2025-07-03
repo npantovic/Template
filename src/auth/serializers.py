@@ -115,6 +115,11 @@ class EmailSerializer(BaseModel):
 class PasswordResetSerializer(BaseModel):
     email: str
 
+
+class PasswordResetSerializerNoLogin(BaseModel):
+    email: str
+
+
 class PasswordChangeSerializer(BaseModel):
     new_password: str
     confirm_new_password: str
