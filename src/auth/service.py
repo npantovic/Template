@@ -308,6 +308,17 @@ class UserService:
         img.save(buf)
         buf.seek(0)
         return buf
+    
+    async def deactivate_2FA(self, email: str, session: AsyncSession):
+        user = await self.get_user_by_email(email, session)
+        if not user:
+            raise ValueError("User not found")
+
+        user.totp_secret = ""
+        user.enabled_2fa = False
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
 
 
     # ==================================================================================================

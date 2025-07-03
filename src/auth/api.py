@@ -427,6 +427,32 @@ async def get_2fa_qr_code(username: str, session: AsyncSession = Depends(get_ses
     return StreamingResponse(img_buf, media_type="image/png")
 
 
+@auth_router.post('/disable_2fa')
+async def disable_2fa(user_details=Depends(access_token_bearer), session: AsyncSession = Depends(get_session)):
+    email = user_details.get('user', {}).get("email")
+
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email not found")
+
+    user = await user_service.get_user_by_email(email, session)
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    await user_service.deactivate_2FA(email, session)
+
+    return JSONResponse(
+        content={
+            "message": "2FA has been disabled successfully",
+            "user": {
+                "email": user.email,
+                "enabled_2fa": user.enabled_2fa
+            }
+        },
+        status_code=status.HTTP_200_OK
+    )
+
+
 # ====================================================LOGIN_ATTEMPTION_BLOCK================================================================
 
 
