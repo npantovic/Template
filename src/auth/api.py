@@ -26,6 +26,7 @@ from .dependencies import get_current_user
 from fastapi.responses import StreamingResponse
 import pyotp
 
+
 REFRESH_TOKEN_EXPIRY = 2
 
 auth_router = APIRouter()
@@ -92,8 +93,8 @@ async def create_user(user_data: UserCreateSerializer, bg_tasks: BackgroundTasks
 # =========================================================LOGIN_LOGOUT====================================================================
 
 
-@auth_router.post('/prelogin')
-async def prelogin_users(login_data: UserLoginSerializerOpt, session: AsyncSession = Depends(get_session)):
+@auth_router.post('/if2falogin')
+async def if2falogin_users(login_data: UserLoginSerializerOpt, session: AsyncSession = Depends(get_session)):
     if not login_data.otp_code:
         raise HTTPException(status_code=400, detail="2FA kod je obavezan")
 
@@ -123,7 +124,7 @@ async def prelogin_users(login_data: UserLoginSerializerOpt, session: AsyncSessi
         refresh=True,
         expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
     )
-
+    user_service.reset_failed_login(login_data.email)
     return JSONResponse(
         content={
             "message": "Successfully logged in",
@@ -142,6 +143,12 @@ async def prelogin_users(login_data: UserLoginSerializerOpt, session: AsyncSessi
 async def login_users(login_data: UserLoginSerializer, session: AsyncSession = Depends(get_session)):
     email = login_data.email
     password_hash = login_data.password_hash
+
+    if user_service.is_user_blocked(email):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="To many failed login attempts, please try again later."
+        )
 
     user = await user_service.get_user_by_email(email, session)
 
@@ -167,7 +174,7 @@ async def login_users(login_data: UserLoginSerializer, session: AsyncSession = D
                         refresh=True,
                         expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
                     )
-
+                    user_service.reset_failed_login(email)
                     return JSONResponse(
                         content={
                             "message": "Successfully logged in",
@@ -189,52 +196,12 @@ async def login_users(login_data: UserLoginSerializer, session: AsyncSession = D
                         },
                         status_code=status.HTTP_200_OK
                     )
-                    # if user.enabled_2fa:
-                    #     if not login_data.otp_code:
-                    #         raise HTTPException(status_code=400, detail="2FA kod je obavezan")
-
-                    #     totp = pyotp.TOTP(user.totp_secret)
-                    #     if not totp.verify(login_data.otp_code, valid_window=1):  # valid_window dozvoljava malo kašnjenje
-                    #         # print("===============================")
-                    #         # print("Kod koji treba da dobijaš u aplikaciji:", pyotp.TOTP("ECSWTHXWRM3JQILP243FKFQOPZXTVEQO").now())
-                    #         # print("===============================")
-                    #         raise HTTPException(status_code=401, detail="Neispravan 2FA kod")
-                        
-                    #     access_token = create_access_token(
-                    #     user_data={
-                    #         'email': user.email,
-                    #         "user_uid": str(user.uid),
-                    #         "role": user.role,
-                    #     }
-                    # )
-
-                    # refresh_token = create_access_token(
-                    #     user_data={
-                    #         'email': user.email,
-                    #         "user_uid": str(user.uid),
-                    #         "role": user.role,
-                    #     },
-                    #     refresh=True,
-                    #     expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
-                    # )
-
-                    # return JSONResponse(
-                    #     content={
-                    #         "message": "Successfully logged in",
-                    #         "access_token": access_token,
-                    #         "refresh_token": refresh_token,
-                    #         "user" : {
-                    #             "email": user.email,
-                    #             "uid": str(user.uid),
-                    #             "role": user.role,
-                    #         }
-                    #     }
-                    # )
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is not verified, check your email",
             )
+    user_service.increment_failed_login(email)
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Invalid email or password",
@@ -317,7 +284,7 @@ async def delete_user(user_uid: str, session: AsyncSession = Depends(get_session
 
 
 @auth_router.post('/password_reset_request')
-async def password_reset_request(user_details=Depends(access_token_bearer)):
+async def password_reset_request(bg_tasks: BackgroundTasks, user_details=Depends(access_token_bearer)):
     email = user_details.get('user', {}).get("email")
 
     if not email:
@@ -338,7 +305,8 @@ async def password_reset_request(user_details=Depends(access_token_bearer)):
                 subject="Reset your password",
                 body=html_message,
             )
-    await mail.send_message(message)
+    
+    bg_tasks.add_task(mail.send_message, message)
 
     return JSONResponse(
         content={
@@ -365,7 +333,6 @@ async def reset_user_password(
     confirm_new_password: str = Form(...),
     session: AsyncSession = Depends(get_session)
 ):
-    # errors = [] odraditi da se errori prikazuju na html strani
 
     if new_password != confirm_new_password:
         raise HTTPException(
@@ -424,3 +391,8 @@ async def get_2fa_qr_code(username: str, session: AsyncSession = Depends(get_ses
 
     img_buf = user_service.get_qr_code(username, secret)
     return StreamingResponse(img_buf, media_type="image/png")
+
+
+# ====================================================LOGIN_ATTEMPTION_BLOCK================================================================
+
+

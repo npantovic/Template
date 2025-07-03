@@ -11,6 +11,11 @@ import pyotp
 import qrcode
 from io import BytesIO
 
+MAX_FAILED_ATTEMPTS = 5
+BLOCK_DURATION_SECONDS = 600  # 10 minuta
+import redis
+r = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+
 class UserService:
 
     async def get_all_users(self, session: AsyncSession):
@@ -303,3 +308,24 @@ class UserService:
         img.save(buf)
         buf.seek(0)
         return buf
+
+
+    # ==================================================================================================
+
+
+    def get_failed_attempts_key(self, email: str) -> str:
+        return f"{email}"
+
+    def increment_failed_login(self, email: str):
+        key = self.get_failed_attempts_key(email)
+        r.incr(key)
+        r.expire(key, BLOCK_DURATION_SECONDS)
+
+    def reset_failed_login(self, email: str):
+        key = self.get_failed_attempts_key(email)
+        r.delete(key)
+
+    def is_user_blocked(self, email: str) -> bool:
+        key = self.get_failed_attempts_key(email)
+        attempts = int(r.get(key) or 0)
+        return attempts >= MAX_FAILED_ATTEMPTS
