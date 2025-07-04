@@ -35,6 +35,9 @@ access_token_bearer = AccessTokenBearer()
 templates = Jinja2Templates(directory="src/templates")
 
 
+# =========================================================ALL_USER====================================================================
+
+
 @auth_router.post("/all_users", response_model=List[User])
 async def get_all_users(session: AsyncSession = Depends(get_session)):
     # role = user_details.get('user', {}).get("role")
@@ -71,10 +74,10 @@ async def create_user(user_data: UserCreateSerializer, bg_tasks: BackgroundTasks
 
     link = f"http://{Config.DOMAIN}/api/v1/auth/verify/{token}"
 
-    html_message = f"""
-            <h1>Verify your Email</h1>
-            <p>Please verify your account. <a href="{link}">Verify here</a> </p>
-            """
+    html_message = templates.TemplateResponse(
+        "verify_account_mail.html",
+        {"request": None, "link": link}
+    ).body.decode("utf-8") 
 
     message = create_message(
         recipients=[email],
@@ -89,6 +92,19 @@ async def create_user(user_data: UserCreateSerializer, bg_tasks: BackgroundTasks
         "user": new_user
     }
 
+
+@auth_router.post("/singup_admin", response_model=UserCreateSerializer, status_code=status.HTTP_201_CREATED)
+async def create_user_admin(user_data: UserCreateSerializer, session: AsyncSession = Depends(get_session)):
+    email = user_data.email
+
+    user_exists = await user_service.user_exists(email, session)
+
+    if user_exists:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User already exists")
+
+    new_user = await user_service.create_user_admin(user_data, session)
+
+    return new_user
 
 # =========================================================LOGIN_LOGOUT====================================================================
 
@@ -207,6 +223,25 @@ async def login_users(login_data: UserLoginSerializer, session: AsyncSession = D
         detail="Invalid email or password",
     )
 
+
+@auth_router.get('/logout')
+async def logout(token_details: dict = Depends(AccessTokenBearer())):
+
+    jti = token_details['jti']
+
+    await add_jti_to_blocklist(jti)
+
+    return JSONResponse(
+        content={
+            "message": "Successfully logged out"
+        },
+        status_code=status.HTTP_200_OK
+    )
+
+
+# =========================================================VERIFY_USER====================================================================
+
+
 @auth_router.get('/verify/{token}', response_class=HTMLResponse, include_in_schema=False)
 async def verify_user_account(token: str, request: Request, session: AsyncSession = Depends(get_session)):
     token_data = decode_url_safe_token(token)
@@ -234,21 +269,6 @@ async def verify_user_account(token: str, request: Request, session: AsyncSessio
         "message": "Account Not Verified",
         "details": "Sorry, there was an issue verifying your account."
     })
-
-
-@auth_router.get('/logout')
-async def logout(token_details: dict = Depends(AccessTokenBearer())):
-
-    jti = token_details['jti']
-
-    await add_jti_to_blocklist(jti)
-
-    return JSONResponse(
-        content={
-            "message": "Successfully logged out"
-        },
-        status_code=status.HTTP_200_OK
-    )
 
 
 # =========================================================UPDATE_DELETE_USER====================================================================
@@ -453,6 +473,14 @@ async def disable_2fa(user_details=Depends(access_token_bearer), session: AsyncS
     )
 
 
-# ====================================================LOGIN_ATTEMPTION_BLOCK================================================================
+# ====================================================CHAT================================================================
 
 
+import requests
+rasa_router = APIRouter()
+
+RASA_SERVER_URL = "http://localhost:5005/webhooks/rest/webhook"
+
+@auth_router.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request):
+    return templates.TemplateResponse("chat.html", {"request": request})
