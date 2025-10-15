@@ -6,7 +6,10 @@ from sqlalchemy.orm import sessionmaker
 
 # ======================MODEL TO CREATE IN DB========================
 from src.auth.model import User
-from src.books.model import Book
+#from src.books.model import Book
+from src.apartment.model import Apartment #, ApartmentImage
+#from src.booking.model import Booking
+#from src.review.model import Review
 # ===================================================================
 
 engine = AsyncEngine(create_engine(url=Config.DATABASE_URL, echo=True))

@@ -5,6 +5,7 @@ from email_validator import validate_email as email_check, EmailNotValidError
 from pydantic import BaseModel, field_validator, Field
 import uuid
 import re
+from .model import GenderEnum
 
 class UserSerializer(BaseModel):
     uid: uuid.UUID
@@ -38,7 +39,7 @@ class UserCreateSerializer(BaseModel):
     last_name: str
     UCIN: str
     date_of_birth: str
-    gender: GenderEnumSerializer
+    gender: GenderEnum
 
     totp_secret: str = ""
     enabled_2fa: bool = False

@@ -1,38 +1,44 @@
-from sqlmodel import SQLModel, Field, Column
-import sqlalchemy.dialects.postgresql as pg
-from sqlalchemy import Integer, String
+from __future__ import annotations
+
+from typing import Optional, List, TYPE_CHECKING
+from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime
 import uuid
-from typing import Optional
+from enum import Enum
 
+if TYPE_CHECKING:
+    from src.apartment.model import Apartment
+
+class GenderEnum(str, Enum):
+    male = "male"
+    female = "female"
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
+
     uid: uuid.UUID = Field(
-        sa_column=Column(
-            pg.UUID,
-            nullable=False,
-            primary_key=True,
-            default=uuid.uuid4
-        )
+        default_factory=uuid.uuid4, primary_key=True
     )
-    id: int = Field(default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True))
+
     username: str
-    password_hash: str = Field(exclude=True)
+    password_hash: str
     email: str
     first_name: str
     last_name: str
     UCIN: str
     date_of_birth: str
-    gender: str
-    is_verified: bool = False
+    gender: GenderEnum
+    is_verified: bool = Field(default=False)
     role: str = Field(default="clan")
 
-    totp_secret: str = None
-    enabled_2fa: bool = False
-    
-    created_at: datetime = Field(sa_column=Column(pg.TIMESTAMP, default=datetime.now()))
-    update_at: datetime = Field(sa_column=Column(pg.TIMESTAMP, default=datetime.now()))
+    totp_secret: Optional[str] = None
+    enabled_2fa: bool = Field(default=False)
+
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    # Use SQLModel's Relationship instead of SQLAlchemy's
+    # apartments: List["Apartment"] = Relationship(back_populates="owner")
 
     def __repr__(self):
         return f"<User {self.username}>"
